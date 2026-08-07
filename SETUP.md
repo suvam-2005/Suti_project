@@ -1,6 +1,6 @@
 git clone https://github.com/sutirtharana2005-netizen/project.git
 
-cd project
+cd Suti_project
 
 py -m venv venv
 
