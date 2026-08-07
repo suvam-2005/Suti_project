@@ -1,5 +1,7 @@
 git clone https://github.com/sutirtharana2005-netizen/project.git
 
+cd project
+
 py -m venv venv
 
 venv/Scripts/activate
