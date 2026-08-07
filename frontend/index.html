@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Disaster Detection System</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #090c11;
+    --bg-panel: #0f141b;
+    --bg-panel-raised: #131a23;
+    --border: #1e2733;
+    --border-bright: #2c3947;
+    --text: #e6ecf3;
+    --muted: #6d7887;
+    --muted-dim: #454e5b;
+    --scan: #3fe8c4;
+    --scan-dim: rgba(63, 232, 196, 0.12);
+    --danger: #ff5a4e;
+
+    --c-flood: #2fb4ff;
+    --c-wildfire: #ff6a3d;
+    --c-cyclone: #a48bff;
+    --c-earthquake: #e0a72e;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(63,232,196,0.07), transparent),
+      radial-gradient(ellipse 700px 500px at 100% 100%, rgba(164,139,255,0.06), transparent),
+      var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    padding: 28px 20px 60px;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* faint scanline texture across the whole page — ties to the detection theme without being loud */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .shell { max-width: 920px; margin: 0 auto; position: relative; z-index: 1; }
+
+  /* ---------- Header / status bar ---------- */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 20px; margin-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--scan), #1f8f77);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 24px rgba(63,232,196,0.35);
+    flex-shrink: 0;
+  }
+  .brand-mark svg { width: 18px; height: 18px; }
+  .brand-text h1 {
+    font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600;
+    margin: 0; letter-spacing: 0.01em;
+  }
+  .brand-text p {
+    margin: 2px 0 0; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .status-pill {
+    display: flex; align-items: center; gap: 7px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--scan);
+    background: var(--scan-dim); border: 1px solid rgba(63,232,196,0.25);
+    padding: 6px 12px; border-radius: 100px; letter-spacing: 0.04em;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--scan);
+    box-shadow: 0 0 8px var(--scan);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  /* ---------- Legend ---------- */
+  .legend {
+    display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 28px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+  /* ---------- Main grid ---------- */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+  }
+  .panel-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted);
+    letter-spacing: 0.1em; text-transform: uppercase; margin: 0 0 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel-label::before { content: ""; width: 3px; height: 12px; background: var(--scan); border-radius: 2px; display: inline-block; }
+
+  /* ---------- Dropzone / sensor input ---------- */
+  #dropzone {
+    border: 1.5px dashed var(--border-bright);
+    border-radius: 10px;
+    aspect-ratio: 4 / 3;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    cursor: pointer; transition: border-color .2s, background .2s;
+    position: relative; overflow: hidden;
+    background: var(--bg-panel-raised);
+  }
+  #dropzone.drag { border-color: var(--scan); background: var(--scan-dim); }
+  #dropzone .hint-icon { color: var(--muted-dim); margin-bottom: 10px; }
+  #dropzone p { margin: 0; color: var(--muted); font-size: 13px; text-align: center; padding: 0 20px; }
+  #dropzone .hint-sub { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted-dim); margin-top: 6px; }
+
+  #previewWrap { position: absolute; inset: 0; display: none; }
+  #preview { width: 100%; height: 100%; object-fit: cover; }
+
+  /* signature element: scanning sweep, plays while a prediction is in flight */
+  .scan-line {
+    position: absolute; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--scan), transparent);
+    box-shadow: 0 0 12px 2px var(--scan);
+    top: 0; display: none;
+  }
+  .scan-line.active { display: block; animation: sweep 1.4s linear infinite; }
+  @keyframes sweep { 0% { top: 0%; } 100% { top: 100%; } }
+  .scan-overlay {
+    position: absolute; inset: 0; background: linear-gradient(180deg, transparent 0%, rgba(9,12,17,0.55) 100%);
+    display: none;
+  }
+  .scan-overlay.active { display: block; }
+
+  #fileInput { display: none; }
+
+  button#predictBtn {
+    width: 100%; margin-top: 14px; padding: 13px; border: none; border-radius: 9px;
+    background: var(--scan); color: #06110d; font-weight: 600; font-size: 13.5px;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 0.03em; text-transform: uppercase;
+    cursor: pointer; transition: filter .15s, transform .1s;
+  }
+  button#predictBtn:hover:not(:disabled) { filter: brightness(1.1); }
+  button#predictBtn:active:not(:disabled) { transform: scale(0.98); }
+  button#predictBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* ---------- Result panel ---------- */
+  #resultPanel .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: calc(100% - 30px); min-height: 220px; color: var(--muted-dim);
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; text-align: center; gap: 10px;
+  }
+  #resultPanel .empty-state svg { opacity: 0.4; }
+
+  .verdict { display: none; }
+  .verdict.active { display: block; }
+
+  .verdict-top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  .verdict-label {
+    font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700;
+    text-transform: capitalize; letter-spacing: -0.01em;
+  }
+  .verdict-conf { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--muted); }
+  .verdict-sub {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted-dim);
+    text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 20px;
+  }
+
+  .prob-row { margin-bottom: 13px; }
+  .prob-row:last-child { margin-bottom: 0; }
+  .prob-head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+  .prob-name { font-family: 'JetBrains Mono', monospace; text-transform: capitalize; color: var(--text); }
+  .prob-val { font-family: 'JetBrains Mono', monospace; color: var(--muted); }
+  .prob-track { height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .prob-fill { height: 100%; border-radius: 4px; width: 0%; transition: width .7s cubic-bezier(.2,.8,.2,1); }
+
+  #error {
+    display: none; margin-top: 14px; padding: 10px 12px; border-radius: 8px;
+    background: rgba(255,90,78,0.08); border: 1px solid rgba(255,90,78,0.3);
+    color: var(--danger); font-size: 12.5px; font-family: 'JetBrains Mono', monospace;
+  }
+
+  footer {
+    margin-top: 30px; text-align: center; font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; color: var(--muted-dim); letter-spacing: 0.04em;
+  }
+</style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L3 7v6c0 5 4 9 9 9s9-4 9-9V7l-9-5z" fill="#06110d"/>
+            <path d="M9 12l2 2 4-4" stroke="#3fe8c4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Disaster Detection</h1>
+          <p>Image Classification System</p>
+        </div>
+      </div>
+      <div class="status-pill"><span class="status-dot"></span>MODEL ONLINE</div>
+    </header>
+
+    <div class="legend" id="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--c-flood)"></span>Flood</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--c-wildfire)"></span>Wildfire</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--c-cyclone)"></span>Cyclone</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--c-earthquake)"></span>Earthquake</span>
+    </div>
+
+    <div class="grid">
+      <!-- Input panel -->
+      <div class="panel">
+        <p class="panel-label">Sensor Input</p>
+        <div id="dropzone">
+          <div id="dzHint">
+            <svg class="hint-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 16V4M12 4L7 9M12 4l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <p>Click or drag an image to analyze</p>
+            <p class="hint-sub">JPG · PNG · WEBP</p>
+          </div>
+          <div id="previewWrap">
+            <img id="preview" />
+            <div class="scan-overlay" id="scanOverlay"></div>
+            <div class="scan-line" id="scanLine"></div>
+          </div>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" />
+        <button id="predictBtn" disabled>Run Detection</button>
+        <div id="error"></div>
+      </div>
+
+      <!-- Result panel -->
+      <div class="panel" id="resultPanel">
+        <p class="panel-label">Classification Readout</p>
+        <div class="empty-state" id="emptyState">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.4"/>
+            <circle cx="12" cy="12" r="1.4" fill="currentColor"/>
+            <path d="M12 3v2M12 19v2M21 12h-2M5 12H3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          <span>Awaiting image input</span>
+        </div>
+
+        <div class="verdict" id="verdict">
+          <div class="verdict-top">
+            <span class="verdict-label" id="verdictLabel">—</span>
+            <span class="verdict-conf" id="verdictConf">—</span>
+          </div>
+          <p class="verdict-sub">Detected class</p>
+          <div id="probList"></div>
+        </div>
+      </div>
+    </div>
+
+    <footer>DISASTER DETECTION SYSTEM — LOCAL INFERENCE — v1.0</footer>
+  </div>
+
+<script>
+  // Point this at wherever backend/main.py is running.
+  const API_URL = "http://localhost:8000/predict";
+
+  const CLASS_COLORS = {
+    flood: "var(--c-flood)",
+    wildfire: "var(--c-wildfire)",
+    cyclone: "var(--c-cyclone)",
+    earthquake: "var(--c-earthquake)",
+  };
+
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const dzHint = document.getElementById("dzHint");
+  const previewWrap = document.getElementById("previewWrap");
+  const preview = document.getElementById("preview");
+  const scanLine = document.getElementById("scanLine");
+  const scanOverlay = document.getElementById("scanOverlay");
+  const predictBtn = document.getElementById("predictBtn");
+  const emptyState = document.getElementById("emptyState");
+  const verdict = document.getElementById("verdict");
+  const errorDiv = document.getElementById("error");
+  let selectedFile = null;
+
+  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("drag"); });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("drag"));
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("drag");
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener("change", e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+  function handleFile(file) {
+    selectedFile = file;
+    preview.src = URL.createObjectURL(file);
+    dzHint.style.display = "none";
+    previewWrap.style.display = "block";
+    predictBtn.disabled = false;
+    verdict.classList.remove("active");
+    emptyState.style.display = "flex";
+    errorDiv.style.display = "none";
+  }
+
+  predictBtn.addEventListener("click", async () => {
+    if (!selectedFile) return;
+    predictBtn.disabled = true;
+    predictBtn.textContent = "Analyzing...";
+    errorDiv.style.display = "none";
+    scanLine.classList.add("active");
+    scanOverlay.classList.add("active");
+
+    const formData = new FormData();
+    formData.append("image", selectedFile);
+
+    try {
+      const res = await fetch(API_URL, { method: "POST", body: formData });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+      showResult(data);
+    } catch (err) {
+      errorDiv.textContent = "Detection failed: " + err.message + " — is the backend running on port 8000?";
+      errorDiv.style.display = "block";
+    } finally {
+      predictBtn.disabled = false;
+      predictBtn.textContent = "Run Detection";
+      scanLine.classList.remove("active");
+      scanOverlay.classList.remove("active");
+    }
+  });
+
+  function showResult(data) {
+    emptyState.style.display = "none";
+    verdict.classList.add("active");
+
+    const color = CLASS_COLORS[data.label] || "var(--scan)";
+    const labelEl = document.getElementById("verdictLabel");
+    labelEl.textContent = data.label;
+    labelEl.style.color = color;
+    document.getElementById("verdictConf").textContent = (data.confidence * 100).toFixed(1) + "% confidence";
+
+    const probList = document.getElementById("probList");
+    probList.innerHTML = "";
+    const sorted = Object.entries(data.probs).sort((a, b) => b[1] - a[1]);
+    sorted.forEach(([name, prob]) => {
+      const c = CLASS_COLORS[name] || "var(--scan)";
+      const row = document.createElement("div");
+      row.className = "prob-row";
+      row.innerHTML = `
+        <div class="prob-head">
+          <span class="prob-name">${name}</span>
+          <span class="prob-val">${(prob*100).toFixed(1)}%</span>
+        </div>
+        <div class="prob-track"><div class="prob-fill" style="background:${c}"></div></div>
+      `;
+      probList.appendChild(row);
+      requestAnimationFrame(() => {
+        row.querySelector(".prob-fill").style.width = (prob*100).toFixed(1) + "%";
+      });
+    });
+  }
+</script>
+</body>
+</html>
